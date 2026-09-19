@@ -1,0 +1,645 @@
+/* ==========================================================================
+   styles.css —— 全局样式（浅色 / 深色两套主题）
+   布局：左侧固定宽度的会话栏 + 右侧自适应聊天区；
+   主色（发送按钮 / 用户气泡 / 高亮）：#4d6bfe（两套主题共用）
+
+   主题实现方式：
+   1) 所有颜色都抽成 CSS 变量，定义在 :root（浅色）里；
+   2) 深色主题只是覆盖同名变量（:root[data-theme='dark']）；
+   3) 切换时由 App.tsx 把 data-theme 写到 <html> 上，并持久化到 localStorage。
+   ========================================================================== */
+
+/* ---------- 浅色主题（默认）变量 ---------- */
+:root {
+  --accent: #4d6bfe; /* 主色：用户气泡 / 发送按钮 / 高亮 */
+
+  --bg-main: #ffffff; /* 主区背景 */
+  --bg-sidebar: #f7f8fa; /* 侧栏背景 */
+  --text-main: #1f2329; /* 主文字 */
+  --text-dim: #9aa1ab; /* 次要文字（时间、提示） */
+  --border-sidebar: #eceef2;
+
+  --btn-new-bg: #e8edff; /* “开启新对话”按钮 */
+  --btn-new-bg-hover: #dde5ff;
+  --btn-new-text: #4d6bfe;
+
+  --item-hover: #eceef3; /* 会话项悬浮 / 选中 */
+  --item-active: #e6ecff;
+  --title: #333a44;
+  --title-active: #4d6bfe;
+
+  --more-color: #7a828d; /* “...”按钮 */
+  --more-hover-bg: #dfe3ea;
+  --more-hover-color: #333a44;
+
+  --menu-bg: #ffffff; /* 悬浮菜单 */
+  --menu-border: #e8eaef;
+  --menu-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --danger: #e5484d;
+  --danger-hover-bg: #fdecec;
+
+  --mask: rgba(15, 23, 42, 0.35); /* 弹窗遮罩 */
+  --modal-bg: #ffffff;
+  --modal-desc: #667085;
+
+  --ghost-bg: #f2f3f5; /* 次要按钮（取消） */
+  --ghost-bg-hover: #e8eaee;
+  --ghost-text: #444444;
+
+  --pre-bg: #f6f8fa; /* 代码块 / 行内代码 / 表格 / 引用 */
+  --inline-code-bg: #f2f4f7;
+  --table-border: #e3e6eb;
+  --quote-border: #d5d9e0;
+  --quote-text: #667085;
+
+  --composer-bg: #ffffff; /* 底部输入卡片 */
+  --composer-border: #e3e6eb;
+  --composer-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  --placeholder: #a3a9b3;
+  --send-disabled: #d3d7de;
+
+  --scrollbar-thumb: #d5d9e0;
+  --scrollbar-thumb-hover: #c0c6cf;
+
+  --footer-border: #e8eaef; /* 侧栏底部（主题开关）分隔线 */
+
+  color-scheme: light;
+}
+
+/* ---------- 深色主题变量（参照 DeepSeek 深色界面） ---------- */
+:root[data-theme='dark'] {
+  --bg-main: #0f0f10; /* 主区：近黑 */
+  --bg-sidebar: #191919; /* 侧栏：深灰黑 */
+  --text-main: #ececee;
+  --text-dim: #8b8b93;
+  --border-sidebar: #262629;
+
+  --btn-new-bg: #2b2b2e; /* 深色下“开启新对话”为深灰底、浅色文字 */
+  --btn-new-bg-hover: #353538;
+  --btn-new-text: #e8e8ea;
+
+  --item-hover: #232326;
+  --item-active: #2e2e33;
+  --title: #d6d6da;
+  --title-active: #ffffff;
+
+  --more-color: #a0a0a8;
+  --more-hover-bg: #3a3a40;
+  --more-hover-color: #e8e8ea;
+
+  --menu-bg: #26262b;
+  --menu-border: #3a3a41;
+  --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --danger: #f2555a;
+  --danger-hover-bg: #3a2528;
+
+  --mask: rgba(0, 0, 0, 0.6);
+  --modal-bg: #26262b;
+  --modal-desc: #a0a6b0;
+
+  --ghost-bg: #333338;
+  --ghost-bg-hover: #3f3f45;
+  --ghost-text: #e6e6e9;
+
+  --pre-bg: #1e1e22;
+  --inline-code-bg: #2a2a2e;
+  --table-border: #3a3a41;
+  --quote-border: #44444b;
+  --quote-text: #a0a6b0;
+
+  --composer-bg: #1a1a1e; /* 输入卡片：比主区稍亮的深灰 */
+  --composer-border: #2c2c31;
+  --composer-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --placeholder: #7c828c;
+  --send-disabled: #3a3a41;
+
+  --scrollbar-thumb: #3a3a41;
+  --scrollbar-thumb-hover: #4a4a52;
+
+  --footer-border: #262629;
+
+  color-scheme: dark; /* 让原生滚动条 / 表单控件也走深色 */
+}
+
+/* ---------- 基础重置 ---------- */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* 提前给 <html> 上背景色：深色主题下刷新页面不会闪白 */
+  background: var(--bg-main);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+    'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  color: var(--text-main);
+  background: var(--bg-main);
+  font-size: 15px;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* 全局细滚动条（侧栏与消息区共用，颜色随主题变化） */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ---------- 总体布局 ---------- */
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---------- 左侧会话栏 ---------- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 272px;
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px 10px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-sidebar);
+}
+
+/* "开启新对话"按钮 */
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--btn-new-bg);
+  color: var(--btn-new-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.new-chat-btn:hover:not(:disabled) {
+  background: var(--btn-new-bg-hover);
+}
+
+.new-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 会话列表容器 */
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+.session-empty {
+  padding: 18px 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* 会话项：两行（标题 + 更新时间），悬浮时右侧出现"..."按钮 */
+.session-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.session-item:hover {
+  background: var(--item-hover);
+}
+
+.session-item.active {
+  background: var(--item-active);
+}
+
+.session-text {
+  min-width: 0; /* 关键：让内部标题的省略号生效 */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.session-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item.active .session-title {
+  color: var(--title-active);
+}
+
+/* 更新时间：灰色小字 */
+.session-time {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* "..."（更多操作）按钮：默认隐藏，悬浮/选中时显示 */
+.session-more {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--more-color);
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.session-item:hover .session-more,
+.session-item.active .session-more {
+  opacity: 1;
+}
+
+.session-more:hover:not(:disabled) {
+  background: var(--more-hover-bg);
+  color: var(--more-hover-color);
+}
+
+/* 流式期间禁用：按钮隐藏、不可点 */
+.session-more:disabled {
+  opacity: 0;
+  cursor: not-allowed;
+}
+
+/* "..."点击后的悬浮菜单：fixed 定位浮在按钮右侧（仿 DeepSeek） */
+.session-menu {
+  position: fixed;
+  z-index: 50;
+  width: 118px;
+  padding: 5px;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: 12px;
+  box-shadow: var(--menu-shadow);
+}
+
+.session-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.session-menu-item.danger {
+  color: var(--danger);
+}
+
+.session-menu-item.danger:hover {
+  background: var(--danger-hover-bg);
+}
+
+/* ---------- 侧栏左下角：主题切换 ---------- */
+.sidebar-footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--footer-border);
+}
+
+/* 设置项样式的一行：图标 + 当前主题名（浅色=太阳/浅色模式，深色=月亮/深色模式） */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--title);
+  font-size: 13.5px;
+}
+
+.theme-toggle:hover {
+  background: var(--item-hover);
+}
+
+.theme-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* ---------- 删除确认弹窗 ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mask);
+}
+
+.modal {
+  width: 320px;
+  padding: 20px;
+  background: var(--modal-bg);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--modal-desc);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn {
+  padding: 7px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 13.5px;
+}
+
+.btn.ghost {
+  background: var(--ghost-bg);
+  color: var(--ghost-text);
+}
+.btn.ghost:hover {
+  background: var(--ghost-bg-hover);
+}
+
+.btn.danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+.btn.danger:hover {
+  filter: brightness(0.92);
+}
+
+/* ---------- 右侧聊天区 ---------- */
+.chat-view {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 消息区：可滚动 */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px 24px 16px;
+}
+
+/* 空会话欢迎语（居中） */
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.welcome-title {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.welcome-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.history-loading {
+  padding: 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* 消息行：统一限制宽度并居中，接近 DeepSeek 的阅读宽度 */
+.message-row {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+}
+
+.message-row.user {
+  justify-content: flex-end;
+}
+
+.message-row.assistant {
+  justify-content: flex-start;
+}
+
+/* 用户消息：蓝色气泡（两套主题下都保持主色，保留输入里的换行） */
+.bubble {
+  max-width: 78%;
+  padding: 10px 16px;
+  border-radius: 18px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 助手消息：Markdown 正文排版 */
+.markdown-body {
+  max-width: 100%;
+  font-size: 14.5px;
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-body p {
+  margin: 0.5em 0;
+}
+.markdown-body pre {
+  padding: 12px 14px;
+  background: var(--pre-bg);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.markdown-body code {
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+}
+.markdown-body :not(pre) > code {
+  padding: 2px 5px;
+  background: var(--inline-code-bg);
+  border-radius: 5px;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--table-border);
+}
+.markdown-body blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid var(--quote-border);
+  color: var(--quote-text);
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.4em;
+}
+
+/* 等待第一个 token 的闪烁光标 */
+.typing-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- 底部输入区 ---------- */
+.composer {
+  width: calc(100% - 48px);
+  max-width: 780px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--composer-border);
+  border-radius: 22px;
+  background: var(--composer-bg);
+  box-shadow: var(--composer-shadow);
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+}
+
+.composer-input {
+  flex: 1;
+  max-height: 144px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.composer-input::placeholder {
+  color: var(--placeholder);
+}
+
+.composer-input:disabled {
+  background: transparent;
+}
+
+/* 发送按钮：圆形主色（禁用时灰色） */
+.send-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.send-btn:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.send-btn:disabled {
+  background: var(--send-disabled);
+  cursor: not-allowed;
+}
+
+/* ---------- 主题切换时的平滑过渡 ---------- */
+body,
+.sidebar,
+.session-item,
+.session-menu,
+.modal,
+.composer,
+.new-chat-btn,
+.btn,
+.markdown-body pre,
+.markdown-body :not(pre) > code {
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}

@@ -1,0 +1,14 @@
+fastapi
+httpx
+langchain
+langchain_community
+langchain_core
+langchain_text_splitters
+langgraph
+psycopg
+psycopg_pool
+pydantic
+pymilvus
+python-dotenv
+rich
+uvicorn
