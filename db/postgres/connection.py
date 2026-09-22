@@ -55,26 +55,8 @@ async def _ensure_pool() -> AsyncConnectionPool:
     return _pool
 
 
-async def list_threads() -> list[dict]:
-    pool = await _ensure_pool()
-
-    sql = """
-        SELECT thread_id,
-               MAX((checkpoint->>'ts')::timestamptz) AS updated_at
-        FROM checkpoints
-        WHERE checkpoint_ns = ''
-        GROUP BY thread_id
-        ORDER BY updated_at DESC
-    """
-    async with pool.connection() as conn:
-        cur = await conn.execute(sql)
-        rows = await cur.fetchall()
-    return list(rows)
-
-
-async def delete_thread(thread_id: str) -> None:
-    checkpointer = await get_checkpointer()
-    await checkpointer.adelete_thread(thread_id)
+async def ensure_pool() -> AsyncConnectionPool:
+    return await _ensure_pool()
 
 
 async def close() -> None:

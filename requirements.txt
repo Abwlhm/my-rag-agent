@@ -1,6 +1,7 @@
 fastapi
 httpx
 langchain
+langchain-mineru
 langchain_community
 langchain_core
 langchain_text_splitters
@@ -10,5 +11,6 @@ psycopg_pool
 pydantic
 pymilvus
 python-dotenv
+python-multipart
 rich
 uvicorn

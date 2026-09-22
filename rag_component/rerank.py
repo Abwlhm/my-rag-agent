@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class SiliconFlowRerank(BaseDocumentCompressor):
+
     base_url: str = Field(default_factory=lambda: os.getenv("SiliconFlow_BASE_URL", ""))
     api_key: Optional[str] = Field(
         default_factory=lambda: os.getenv("SiliconFlow_API_KEY")

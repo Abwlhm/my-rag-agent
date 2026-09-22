@@ -46,7 +46,7 @@ def split_docs(documents: Iterable[Document]) -> list[Document]:
 
 
 if __name__ == "__main__":
-    text = "aaaaaaaaaaaaaaa\n\nbbbbbbbbbbbbbbbbbbbb\n\nccccccccccccccccccccccc"
+    text = "aaaaaaaaaa\n\nbbbbbbbbbbbbbb\n\ncccccccccccccccccc"
 
     paragraphs = text_splitter.split_text(text)
 

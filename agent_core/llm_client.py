@@ -23,6 +23,7 @@ llm = init_chat_model(
 
 
 class RouteDecision(BaseModel):
+
     need_retrieve: bool = Field(
         description=(
             "true = 必须查询企业知识库才能回答（套餐、资费、政策、规则等业务事实）；"

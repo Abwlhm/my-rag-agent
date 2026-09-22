@@ -8,8 +8,8 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from persistence import postgres as db
-from rag_component.vector_db import retrieve_from_vector_db
+from db.postgres import connection
+from rag_component.pipeline import retrieve_from_vector_db
 from rag_component.rerank import aget_rerank_chunks
 from agent_core.llm_client import llm, route_llm, condense_llm
 
@@ -181,6 +181,7 @@ async def route_node(state: OverAllState) -> OverAllState:
 
     logger.info("路由结果 need_retrieve=%s | query=%s", decision, query)
 
+
     if not state["messages"]:
         return {
             "need_retrieve": decision,
@@ -307,7 +308,7 @@ async def get_graph() -> Any:
 
     async with _init_lock:
         if _graph is None:
-            checkpointer = await db.get_checkpointer()
+            checkpointer = await connection.get_checkpointer()
             _graph = builder.compile(checkpointer=checkpointer)
 
     assert _graph is not None
@@ -316,7 +317,7 @@ async def get_graph() -> Any:
 
 async def aclose_graph() -> None:
     global _graph
-    await db.close()
+    await connection.close()
     _graph = None
 
 

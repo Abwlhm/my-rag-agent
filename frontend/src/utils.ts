@@ -31,3 +31,22 @@ export function formatTime(iso: string): string {
     ? `${monthDay} ${hourMinute}`
     : `${date.getFullYear()}-${monthDay}`
 }
+
+/**
+ * 把字节数格式化成好读的大小（文档列表用）：
+ *   0 → 0 B；1536 → 1.5 KB；1048576 → 1.0 MB
+ */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+
+  // 字节数不带小数，其它单位保留一位
+  return `${unitIndex === 0 ? value : value.toFixed(1)} ${units[unitIndex]}`
+}

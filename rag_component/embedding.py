@@ -13,6 +13,7 @@ embedding_model = init_embeddings(
 
 
 if __name__ == "__main__":
+    
     texts = ["你好", "hello"]
 
     for text in texts:

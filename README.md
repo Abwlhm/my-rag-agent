@@ -15,27 +15,45 @@ Agent（agent_core，LangGraph 图：追问改写 → 路由 → 检索/直答 �
 DeepSeek（LLM）                  PostgreSQL（会话记忆 + 侧栏会话列表）
                                         ▲
                               Milvus + SiliconFlow（检索链路）
+
+图结构：
+    START → condense → route ─┬→ retrieve → rerank ─┬→ assemble → llm → END
+                              │                     └→ no_info ───────→ END
+                              └→ direct ─────────────────────→ llm → END
 ```
 
 ## 目录结构
 
 - `agent_core/llm_client.py`：LLM / 路由模型的构造（DeepSeek 官方 API）。
 - `agent_core/rag_agent.py`：LangGraph 图（condense → route → retrieve/rerank → 回答），
-  通过 `persistence` 层提供的 Postgres checkpointer 持久化每个会话（`thread_id`）的记忆。
-- `persistence/`：基础设施层——Postgres 连接池与 checkpointer（懒加载单例）、会话列表查询与删除；
-  依赖方向单向：`agent_core` → `persistence`（后者不反向 import）。
-- `agent_core/chat_agent.py`：Web 层唯一依赖的业务入口
-  （流式回答、会话列表、历史消息、删除会话、关闭连接池）。
+  通过 `db` 层提供的 Postgres checkpointer 持久化每个会话（`thread_id`）的记忆。
+- `services/`：应用服务层（Web 层唯一依赖的一层；两个模块原先都在 `agent_core/` 下）：
+  - `chat_service.py`：流式问答 / 会话列表 / 历史消息 / 删除会话 / 关闭 Postgres 连接池
+    （本身只是把图与会话查询拼起来的用例门面，不含 Agent 能力）；
+  - `document_service.py`：文档上传 / 入库 / 列表 / 删除 / 关闭 Milvus 客户端。
+- `db/`：数据存储层，按数据库分子包；**只依赖 pymilvus / psycopg，不反向依赖上层**：
+  - `db/postgres/connection.py`：Postgres 连接池 + LangGraph checkpointer（懒加载单例）；
+  - `db/postgres/sessions.py`：会话列表查询与删除；
+  - `db/postgres/documents.py`：文档台账表（`documents`）的增删改查；
+  - `db/milvus/client.py`：Milvus 客户端（库/集合准备、chunk 增删查、向量检索）。
+- `constants.py`：跨层共享的常量（目前只有前端进度百分比 `STEP_PERCENT`）。
 - `backend_api/main.py`：FastAPI，提供 SSE 流式问答与会话管理接口。
 - `frontend/`：React 前端（Vite + TypeScript），界面仿 DeepSeek：
   左侧会话列表（标题暂为 `thread_id`，含更新时间、悬浮"..."删除菜单），
   右侧聊天区（流式打字机 + Markdown 渲染）。
-- `rag_component/`：检索组件（加载、切分、向量化、Milvus、重排）。
+- `rag_component/`：RAG 处理组件（加载、切分、向量化、重排、入库流水线 `pipeline.py`）。
+- `test/`：流程测试脚本（`docs_check.py` 文档入库、`persistence_check.py` 会话与图、
+  `api_docs_check.py` 文档接口端到端、`reset_docs_db.py` 数据重置）。
+- 依赖方向：`backend_api` → {`agent_core`, `services`} → {`db`, `rag_component`}；
+  `rag_component` → `db`（`db` 不反向依赖任何上层）。
 
 ## 运行前提
 
 - 根目录 `.env` 已配置 `DeepSeek_*`（LLM）与 `POSTGRESQL_DB_URL`（会话记忆）；
-  检索链路另需 `SiliconFlow_*`，且本机 Milvus 已启动（`http://127.0.0.1:19530`）。
+  检索链路另需 `SiliconFlow_*`，且本机 Milvus 已启动；
+  Milvus 连接参数同样从 `.env` 读取：`MILVUS_URI`（默认 `http://127.0.0.1:19530`）、
+  `MILVUS_DB_NAME`（默认 `rag_demo`）、`MILVUS_COLLECTION_NAME`（默认 `docs`）、
+  `MILVUS_EMBEDDING_DIM`（默认 `4096`，必须与 `SiliconFlow_Embedding_MODEL` 的真实维度一致）。
 - 后端依赖：`pip install -r requirements.txt`
 - 前端依赖：进入 `frontend/` 后执行 `npm install`（需要 Node.js 18+）。
 
@@ -89,3 +107,19 @@ cd frontend; if ($?) { npm run dev }
   localStorage，刷新后保持；首屏由 `index.html` 内联脚本提前应用，不会闪白屏。
 - **开发期跨域**：Vite 把 `/api` 代理到 `http://127.0.0.1:8000`，后端无需配置 CORS。
 
+## 单独验证后端接口（不依赖界面）
+
+```
+curl -N -X POST http://127.0.0.1:8000/api/chat/stream ^
+  -H "Content-Type: application/json" ^
+  -d "{\"query\":\"你好\",\"thread_id\":\"demo-1\"}"
+```
+
+应看到一行行 `data: {"type": "content", "text": "..."}`，最后以 `data: {"type":"done"}` 结束；
+用同一 `thread_id` 再问"我刚才问了什么？"，回答能回忆上一轮 → 多轮记忆生效。
+
+## 备注
+
+- 模型/角色设定集中在 `agent_core/rag_agent.py` 的 `UNIFIED_SYSTEM_PROMPT` 与 `agent_core/llm_client.py`。
+- `llm_node` 刻意不裁剪历史（保证多轮记忆完整），长会话 token 会线性增长，后续可用滚动摘要兜底。
+- 会话标题目前直接显示 `thread_id`；将来若要做"自动生成标题"，建议新增一张会话元数据表存标题。

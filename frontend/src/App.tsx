@@ -1,7 +1,12 @@
 /**
  * App.tsx —— 页面根组件（状态与流程编排）
  *
- * 整体流程：
+ * 三个视图（由侧栏顶部导航切换）：
+ *   - 知识问答（chat）：原有聊天界面 + 会话列表；
+ *   - 提交入库（upload）：上传文档到 Milvus，带五阶段进度；
+ *   - 文档列表（docs）：查看 / 删除已入库文档。
+ *
+ * 问答视图的流程：
  *   1) 打开页面：拉取所有历史会话（GET /api/sessions）显示在左侧；
  *   2) "开启新对话"：前端生成新的 thread_id（crypto.randomUUID），清空消息区；
  *   3) 发送消息：先追加"用户消息 + 空的助手占位"，再用 SSE 流式填充助手内容；
@@ -10,21 +15,30 @@
  *   5) 删除会话：调 DELETE 接口清空数据库数据；若删的是当前会话则回到空白态；
  *   6) 主题：侧栏左下方可在浅色 / 深色之间切换，选择持久化在 localStorage。
  *
- * 交互约定：流式回答期间忽略"切换会话/新建对话/删除"等操作（简化处理）。
+ * 文档相关：上传成功、删除文档后把 docsRefreshKey +1，文档列表据此重新拉取。
+ *
+ * 交互约定：流式回答期间忽略"切换会话 / 新建对话 / 删除 / 切视图"等操作（简化处理）。
  */
 import { useCallback, useEffect, useState } from 'react'
 
 import { deleteSession, fetchMessages, listSessions, streamChat } from './api'
 import ChatView from './components/ChatView'
+import DocumentListView from './components/DocumentListView'
 import Sidebar from './components/Sidebar'
-import type { ChatMessage, SessionInfo, Theme } from './types'
+import UploadView from './components/UploadView'
+import type { ChatMessage, SessionInfo, Theme, ViewKey } from './types'
 
 export default function App() {
+  /** 当前视图（侧栏导航切换） */
+  const [view, setView] = useState<ViewKey>('chat')
+
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  /** 文档列表的刷新信号：上传成功 / 删除文档后 +1 */
+  const [docsRefreshKey, setDocsRefreshKey] = useState(0)
 
   // 主题：默认浅色；用户的切换选择持久化到 localStorage。
   // （index.html 里有一段内联脚本会在首屏渲染前应用已保存的主题，避免闪屏。）
@@ -40,6 +54,12 @@ export default function App() {
 
   /** 切换浅色 / 深色主题 */
   const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
+
+  /** 切换视图；流式回答期间忽略（避免把正在生成的回答"藏"起来） */
+  const handleSelectView = (next: ViewKey) => {
+    if (streaming) return
+    setView(next)
+  }
 
   /** 刷新侧栏会话列表（挂载时、每轮回答结束后调用） */
   const refreshSessions = useCallback(async () => {
@@ -141,18 +161,40 @@ export default function App() {
         sessions={sessions}
         currentThreadId={currentThreadId}
         streaming={streaming}
+        view={view}
         theme={theme}
         onToggleTheme={toggleTheme}
+        onSelectView={handleSelectView}
         onNewChat={handleNewChat}
         onSelect={handleSelectSession}
         onDelete={handleDeleteSession}
       />
-      <ChatView
-        messages={messages}
-        streaming={streaming}
-        loadingHistory={loadingHistory}
-        onSend={handleSend}
-      />
+
+      {/* 主内容区：三个视图互斥显示（不卸载聊天状态，切回来还在） */}
+      {view === 'chat' && (
+        <ChatView
+          messages={messages}
+          streaming={streaming}
+          loadingHistory={loadingHistory}
+          onSend={handleSend}
+        />
+      )}
+
+      {view === 'upload' && (
+        <UploadView
+          // 入库成功：让文档列表下次进入时重新拉取
+          onUploaded={() => setDocsRefreshKey((key) => key + 1)}
+          onGoDocs={() => setView('docs')}
+        />
+      )}
+
+      {view === 'docs' && (
+        <DocumentListView
+          refreshKey={docsRefreshKey}
+          onChanged={() => setDocsRefreshKey((key) => key + 1)}
+          onGoUpload={() => setView('upload')}
+        />
+      )}
     </div>
   )
 }
