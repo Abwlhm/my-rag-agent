@@ -1,63 +1,139 @@
-# 对话 Agent 原型（React + FastAPI + LangChain/LangGraph）
+# 企业知识库问答 Agent（RAG 检索链路 + LangGraph 编排）
 
-前后端分离的流式对话 Agent（含 RAG 检索链路）原型：
+> 前后端分离的企业知识库问答 Agent：LangGraph 编排的 RAG 问答图 + Milvus 混合检索 + Rerank 精排 + 会话持久记忆。
+
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-SSE-009688?logo=fastapi&logoColor=white)
+![LangGraph](https://img.shields.io/badge/Agent-LangGraph-1C3C3C)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
+![Milvus](https://img.shields.io/badge/VectorDB-Milvus-00A1EA)
+![PostgreSQL](https://img.shields.io/badge/Storage-PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+
+## 项目介绍
+
+**项目名称**：企业知识库问答 Agent（RAG 检索链路 + LangGraph 编排）
+
+**项目描述**：面向企业文档的智能问答系统，支持文档上传入库、多轮流式对话与会话管理，前端 React + TypeScript、后端 FastAPI，前后端分离。
+
+**基本架构**：
 
 ```
-浏览器（React 聊天界面）
-    │  /api/*（开发期由 Vite 代理转发到后端）
+浏览器（React + TypeScript：聊天界面 / 文档管理 / 会话侧栏）
+    │  /api/*（开发期由 Vite 代理转发）
     ▼
-FastAPI 接口（backend_api）—— SSE 流式回答
+FastAPI 接口层（backend_api）—— SSE 流式回答 + 会话 / 文档接口
     │
     ▼
-Agent（agent_core，LangGraph 图：追问改写 → 路由 → 检索/直答 → 回答）
-    │                                   │
-    ▼                                   ▼
-DeepSeek（LLM）                  PostgreSQL（会话记忆 + 侧栏会话列表）
-                                        ▲
-                              Milvus + SiliconFlow（检索链路）
+服务层（services）—— chat_service（对话）/ document_service（文档）
+    │
+    ├──► 文档链路：上传落盘 → 解析（MinerU / 本地 Loader）→ 切分 → 向量化 ──► Milvus 向量库
+    │                                                                          ▲
+    ▼                                                                          │ 混合检索
+Agent 层（agent_core，LangGraph 状态图）                                       │
+    追问改写 → 检索路由 ─┬─ 需要检索 → 混合检索 → 重排（SiliconFlow）──────────┘
+                        │
+                        └─ 无需检索 → 直接回答 ─┐
+                                                ▼
+                                            生成回答 ──► DeepSeek（LLM）──► SSE 流式回传前端
 
-图结构：
-    START → condense → route ─┬→ retrieve → rerank ─┬→ assemble → llm → END
-                              │                     └→ no_info ───────→ END
-                              └→ direct ─────────────────────→ llm → END
+记忆：PostgreSQL（checkpointer 按 thread_id 持久化会话状态，支撑多轮对话与会话列表）
 ```
+
+**技术亮点**：
+
+1. 基于 LangGraph 将问答链路编排为有状态图：追问改写 → 检索路由 → 混合检索 → 重排 → 上下文组装 → 生成。路由采用"规则前置短路 + LLM 结构化输出(新增Jev路由)"两级判定，闲聊与常识类问题直答、业务事实类问题才触发检索，并支持强制检索 / 强制直答模式；同时设置无召回兜底分支，并在提示词中约束检索片段仅作数据使用，规避提示词注入。
+2. RAG 流水线：按扩展名分发解析（PDF / Office / 图片走 MinerU 在线解析，纯文本类走本地 Loader），递归切分后分批向量化写入 Milvus；检索阶段用稠密向量与 BM25 稀疏向量混合召回、RRF 融合，再经 Rerank 模型精排与分值阈值过滤，最后将 Top-K 片段注入提示词，约束模型仅依据片段作答、依据不足时明确拒答。
+3. 记忆与数据管理：用 Postgres checkpointer 按会话 ID 持久化图状态，实现多轮记忆与会话历史的读取、列表与删除；追问会先结合历史改写为可独立理解的问题再进入检索。文档侧以台账表管理分类、文件元数据与向量库的一致性，上传过程通过 SSE 回传解析、切分、向量化、入库的分步进度。
+4. 工程实践：全链路异步实现（异步接口、异步数据库与 HTTP 调用、异步图执行），前端提供流式打字机回答、Markdown 渲染、深浅主题与会话侧栏；后端按 api / service / agent / 存储层分层，依赖单向，检索与问答链路均可独立测试。
+
+## 功能特性
+
+- **知识库问答（RAG）**：回答严格依据检索到的资料片段，依据不足时明确拒答；片段只作数据、不执行其中指令
+- **智能路由**：先规则短路、再用 LLM 结构化输出分类，自动判断"要不要查库"，并支持 `auto` / `retrieve` / `direct` 三种模式
+- **混合检索 + 重排**：稠密向量（COSINE）与 BM25 稀疏向量双路召回、RRF 融合，再经 Rerank 精排与分值阈值过滤
+- **多格式文档入库**：PDF / Office / 图片走 MinerU 在线解析，txt / csv / json / md 本地解析；上传过程回传分步进度
+- **文档管理**：分类、列表、删除（删除时同时清理向量库 chunk 与文档台账）
+- **多轮会话记忆**：Postgres checkpointer 按 `thread_id` 持久化，支持会话列表、历史回看、删除会话
+- **流式体验**：SSE 逐段输出，前端打字机效果 + Markdown 渲染，浅色 / 深色主题
+
+## 技术栈
+
+| 层次 | 技术选型 |
+|---|---|
+| 后端接口 | FastAPI + Uvicorn（SSE 流式响应） |
+| Agent 编排 | LangGraph（`StateGraph` + 条件路由 + Postgres checkpointer） |
+| 对话模型 | DeepSeek（`init_chat_model`，关闭思考模式；路由可选 Jev 决策模型） |
+| 向量库 | Milvus（`pymilvus`：稠密 + BM25 稀疏双索引、RRF 融合） |
+| 关系库 | PostgreSQL（`psycopg` 异步连接池：会话记忆 + 文档台账） |
+| 向量化 / 重排 | SiliconFlow（Embedding、Rerank） |
+| 文档解析 | MinerU（PDF / Office / 图片）+ langchain-community Loader |
+| 前端 | React 19 + TypeScript + Vite |
 
 ## 目录结构
 
-- `agent_core/llm_client.py`：LLM / 路由模型的构造（DeepSeek 官方 API）。
-- `agent_core/rag_agent.py`：LangGraph 图（condense → route → retrieve/rerank → 回答），
-  通过 `db` 层提供的 Postgres checkpointer 持久化每个会话（`thread_id`）的记忆。
-- `services/`：应用服务层（Web 层唯一依赖的一层；两个模块原先都在 `agent_core/` 下）：
-  - `chat_service.py`：流式问答 / 会话列表 / 历史消息 / 删除会话 / 关闭 Postgres 连接池
-    （本身只是把图与会话查询拼起来的用例门面，不含 Agent 能力）；
-  - `document_service.py`：文档上传 / 入库 / 列表 / 删除 / 关闭 Milvus 客户端。
-- `db/`：数据存储层，按数据库分子包；**只依赖 pymilvus / psycopg，不反向依赖上层**：
-  - `db/postgres/connection.py`：Postgres 连接池 + LangGraph checkpointer（懒加载单例）；
-  - `db/postgres/sessions.py`：会话列表查询与删除；
-  - `db/postgres/documents.py`：文档台账表（`documents`）的增删改查；
-  - `db/milvus/client.py`：Milvus 客户端（库/集合准备、chunk 增删查、向量检索）。
-- `constants.py`：跨层共享的常量（目前只有前端进度百分比 `STEP_PERCENT`）。
-- `backend_api/main.py`：FastAPI，提供 SSE 流式问答与会话管理接口。
-- `frontend/`：React 前端（Vite + TypeScript），界面仿 DeepSeek：
-  左侧会话列表（标题暂为 `thread_id`，含更新时间、悬浮"..."删除菜单），
-  右侧聊天区（流式打字机 + Markdown 渲染）。
-- `rag_component/`：RAG 处理组件（加载、切分、向量化、重排、入库流水线 `pipeline.py`）。
-- `test/`：流程测试脚本（`docs_check.py` 文档入库、`persistence_check.py` 会话与图、
-  `api_docs_check.py` 文档接口端到端、`reset_docs_db.py` 数据重置）。
-- 依赖方向：`backend_api` → {`agent_core`, `services`} → {`db`, `rag_component`}；
-  `rag_component` → `db`（`db` 不反向依赖任何上层）。
+```
+MyAgent/
+├─ backend_api/main.py       # FastAPI 接口：问答 SSE、会话管理、文档管理
+├─ services/                 # 应用服务层（Web 层唯一依赖）
+│  ├─ chat_service.py        #   对话用例：流式问答、会话列表 / 历史 / 删除
+│  └─ document_service.py    #   文档用例：上传落盘、入库、删除
+├─ agent_core/
+│  ├─ rag_agent.py           # LangGraph 问答图：追问改写 → 路由 → 检索 / 直答 → 回答
+│  └─ llm_client.py          # 对话模型与路由模型的构造
+├─ rag_component/
+│  ├─ loader.py              # 文档解析分发（MinerU / 本地 Loader）
+│  ├─ splitter.py            # 递归切分
+│  ├─ embedding.py           # 向量化
+│  ├─ rerank.py              # 重排
+│  └─ pipeline.py            # 入库流水线 + 混合检索入口
+├─ db/                       # 存储层（不反向依赖上层）
+│  ├─ postgres/              #   连接池 + checkpointer / 会话 / 文档台账
+│  └─ milvus/client.py       #   Milvus 客户端：集合准备、chunk 增删查、混合检索
+├─ frontend/                 # React 前端（聊天 / 文档 / 会话侧栏）
+├─ test/                     # 冒烟与端到端脚本
+├─ constants.py              # 跨层共享常量（上传进度百分比）
+└─ requirements.txt
+```
 
-## 运行前提
+## 快速开始
 
-- 根目录 `.env` 已配置 `DeepSeek_*`（LLM）与 `POSTGRESQL_DB_URL`（会话记忆）；
-  检索链路另需 `SiliconFlow_*`，且本机 Milvus 已启动；
-  Milvus 连接参数同样从 `.env` 读取：`MILVUS_URI`（默认 `http://127.0.0.1:19530`）、
-  `MILVUS_DB_NAME`（默认 `rag_demo`）、`MILVUS_COLLECTION_NAME`（默认 `docs`）、
-  `MILVUS_EMBEDDING_DIM`（默认 `4096`，必须与 `SiliconFlow_Embedding_MODEL` 的真实维度一致）。
-- 后端依赖：`pip install -r requirements.txt`
-- 前端依赖：进入 `frontend/` 后执行 `npm install`（需要 Node.js 18+）。
+### 1. 环境要求
 
-## 启动步骤（两个终端）
+- Python 3.14（本项目开发运行环境）
+- Node.js 20.19+ / 22.12+（Vite 8 要求）
+- PostgreSQL（会话记忆与文档台账）
+- Milvus（默认 `http://127.0.0.1:19530`；服务端建议 ≥ v3.0.2）
+- DeepSeek、SiliconFlow 的 API Key；解析 PDF / Office / 图片还需 MinerU API Key
+
+### 2. 安装依赖
+
+```bash
+# 后端（在工作区根目录执行）
+pip install -r requirements.txt
+
+# 前端
+cd frontend
+npm install
+```
+
+### 3. 配置 `.env`
+
+在项目根目录创建 `.env`（已被 `.gitignore` 忽略）：
+
+| 变量 | 说明 |
+|---|---|
+| `DeepSeek_API_KEY` / `DeepSeek_MODEL` / `DeepSeek_BASE_URL` | 对话模型（默认 `https://api.deepseek.com`） |
+| `POSTGRESQL_DB_URL` | PostgreSQL 连接串（会话记忆与文档台账） |
+| `SiliconFlow_API_KEY` / `SiliconFlow_BASE_URL` | Embedding 与 Rerank 服务 |
+| `SiliconFlow_Embedding_MODEL` | 向量模型，维度需与 `MILVUS_EMBEDDING_DIM` 一致 |
+| `SiliconFlow_Reranker_MODEL` | 重排模型 |
+| `TOP_N_RERANK` / `SCORE_THRESHOLD_RERANK` | 重排保留条数（默认 5）/ 最低分（默认 0.1） |
+| `MinerU_API_KEY` | 文档解析（仅 PDF / Office / 图片需要） |
+| `MILVUS_URI` / `MILVUS_DB_NAME` / `MILVUS_COLLECTION_NAME` | Milvus 地址与库 / 集合名（默认 `rag_demo` / `docs`） |
+| `MILVUS_EMBEDDING_DIM` | 稠密向量维度（默认 4096，建集合时校验） |
+| `ROUTE_BACKEND` / `Jev_ROUTE_THRESHOLD` | 路由实现（`llm` / `jev`）与判定阈值（默认 0.5） |
+
+### 4. 启动服务（两个终端）
 
 终端 1 —— 启动后端（默认 8000 端口）：
 
@@ -65,7 +141,7 @@ DeepSeek（LLM）                  PostgreSQL（会话记忆 + 侧栏会话列�
 python -m uvicorn backend_api.main:app --host 127.0.0.1 --port 8000 --loop asyncio:SelectorEventLoop
 ```
 
-（Windows 上 psycopg 异步必须使用 SelectorEventLoop；直接 `python -m backend_api.main` 也可以。）
+（直接 `python -m backend_api.main` 也可以。）
 
 终端 2 —— 启动前端（默认 5173 端口）：
 
@@ -73,19 +149,33 @@ python -m uvicorn backend_api.main:app --host 127.0.0.1 --port 8000 --loop async
 cd frontend
 npm run dev
 
-cd frontend; if ($?) { npm run dev }
+
 ```
 
 浏览器打开 http://127.0.0.1:5173 即可对话。
 
-## 接口一览
+## 接口说明
+
+### 接口一览
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/chat/stream` | 流式问答（SSE）。请求体 `{"query": "...", "thread_id": "..."}`；`thread_id` 省略时后端自动生成 uuid4（等价于无记忆的单轮问答） |
-| GET | `/api/sessions` | 列出所有历史会话（直接读 PostgreSQL 的 `checkpoints` 表），按最近活跃倒序，含 `updated_at` |
-| GET | `/api/sessions/{thread_id}/messages` | 读取某个会话的聊天记录（不含 system 提示词） |
-| DELETE | `/api/sessions/{thread_id}` | 删除某个会话：清空 `checkpoints` / `checkpoint_blobs` / `checkpoint_writes` 三张表中该 thread 的数据；幂等 |
+| POST | `/api/chat/stream` | 流式问答（SSE）；请求体 `{"query", "thread_id"?, "mode"?}`，`mode` 取 `auto` / `retrieve` / `direct` |
+| GET | `/api/sessions` | 会话列表（按最近活跃倒序） |
+| GET | `/api/sessions/{thread_id}/messages` | 会话聊天记录（不含 system 提示词） |
+| DELETE | `/api/sessions/{thread_id}` | 删除会话（幂等） |
+| POST | `/api/documents/upload` | 上传文档（multipart，≤ 50 MB），返回 SSE 进度流 |
+| GET | `/api/documents` | 文档列表（按最近更新倒序） |
+| GET | `/api/documents/categories` | 已有分类（前端输入候选） |
+| DELETE | `/api/documents/{doc_id}` | 删除文档：清 Milvus chunk + 删台账行（幂等） |
+
+命令行验证（不依赖前端）：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"query":"你好","thread_id":"demo-1"}'
+```
 
 ### SSE 事件格式
 
@@ -95,31 +185,20 @@ cd frontend; if ($?) { npm run dev }
 | `error`   | 出错信息，字段 `message` |
 | `done`    | 回答结束 |
 
-## 前端行为说明
 
-- **多轮记忆**：不再由前端传 history，而是后端 checkpointer 按 `thread_id` 读写 PostgreSQL；
-  前端只负责生成（`crypto.randomUUID()`）并透传 `thread_id`。
-- **会话列表**：直接读 checkpointer 的 `checkpoints` 表，所以测试脚本产生的线程
-  （如 `thread_test00`、`demo-thread-001`）也会出现在列表里，不需要时用界面删除即可。
-- **删除会话**：鼠标悬停会话 → 点右侧"..." → 删除 → 确认；后端会同时清空数据库中该会话的全部数据。
-- **流式期间**：输入框禁用；侧栏的"切换会话 / 新建对话 / 删除"操作被忽略（简化处理）。
-- **主题**：侧栏左下角可切换浅色 / 深色（深色仿 DeepSeek 深色界面），选择持久化在
-  localStorage，刷新后保持；首屏由 `index.html` 内联脚本提前应用，不会闪白屏。
-- **开发期跨域**：Vite 把 `/api` 代理到 `http://127.0.0.1:8000`，后端无需配置 CORS。
+## 常见问题
 
-## 单独验证后端接口（不依赖界面）
+- **Windows 上启动后端要用 SelectorEventLoop**：psycopg 异步与默认 Proactor 事件循环不兼容，
+  启动加 `--loop asyncio:SelectorEventLoop`（直接 `python -m backend_api.main` 也可以）。
+- **改过集合 schema 后要重建**：向量维度、分词等配置变更后旧集合不可用，执行 `python -m test.reset_docs_db`。
+- **Milvus 建议 ≥ v3.0.2**：v3.0.0 的 `hybrid_search` 在零命中时会报 `unsupported ID type`。
+- **启动目录必须是工作区根目录**：`assets/` 等路径按相对路径解析，请在根目录启动后端。
+- **长会话 token 线性增长**：`llm_node` 刻意不裁剪历史以保留完整记忆，后续可用滚动摘要兜底。
 
-```
-curl -N -X POST http://127.0.0.1:8000/api/chat/stream ^
-  -H "Content-Type: application/json" ^
-  -d "{\"query\":\"你好\",\"thread_id\":\"demo-1\"}"
-```
+## 已知限制与后续计划
 
-应看到一行行 `data: {"type": "content", "text": "..."}`，最后以 `data: {"type":"done"}` 结束；
-用同一 `thread_id` 再问"我刚才问了什么？"，回答能回忆上一轮 → 多轮记忆生效。
+- 会话标题暂用 `thread_id`，计划新增会话元数据表支持自动生成标题
+- 流式回答期间前端的会话切换 / 新建 / 删除会被忽略（简化处理）
+- 历史消息未做窗口裁剪或摘要，超长会话的 token 成本会线性上升
+- 暂未实现用户鉴权与多租户隔离
 
-## 备注
-
-- 模型/角色设定集中在 `agent_core/rag_agent.py` 的 `UNIFIED_SYSTEM_PROMPT` 与 `agent_core/llm_client.py`。
-- `llm_node` 刻意不裁剪历史（保证多轮记忆完整），长会话 token 会线性增长，后续可用滚动摘要兜底。
-- 会话标题目前直接显示 `thread_id`；将来若要做"自动生成标题"，建议新增一张会话元数据表存标题。

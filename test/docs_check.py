@@ -1,3 +1,13 @@
+r"""docs_check.py —— 文档入库链路冒烟测试（不依赖 MinerU，只用本地 txt）。
+
+覆盖：plan_upload 校验、save_upload 限流、ingest 全流程、覆盖上传、删除、失败路径、清理。
+运行（cwd 必须是工作区根目录）：
+    & "D:\Python\Python314\python.exe" -m test.docs_check
+
+前置条件：Milvus(19530) 与 PostgreSQL(5432) 在运行；Windows 上 psycopg 异步必须用
+SelectorEventLoop，且所有异步操作要在同一个 asyncio.run 里跑完（连接池绑定事件循环）。
+"""
+
 import asyncio
 import logging
 import shutil
@@ -9,9 +19,11 @@ from db.postgres import connection
 from db.postgres import documents as doc_table
 from services import document_service
 
+# 测试专用分类目录与文件名（跑完会整个删掉）
 TEST_CATEGORY = "docs_check"
 TEST_FILE_NAME = "docs_check_demo.txt"
 
+# 测试正文：故意写够长（> 250 字）以便切出多个 chunk
 DEMO_TEXT = """RAG（检索增强生成）是把外部知识库接进大模型的标准做法。
 
 第一步是文档解析与切分：PDF、Office 这类文档先经 MinerU 在线解析成 Markdown，
@@ -26,6 +38,7 @@ DEMO_TEXT = """RAG（检索增强生成）是把外部知识库接进大模型�
 
 
 def _check(condition: bool, message: str) -> None:
+    """迷你断言：成功打印 [OK]，失败直接抛错中断。"""
     if condition:
         print(f"  [OK] {message}")
     else:
@@ -33,6 +46,7 @@ def _check(condition: bool, message: str) -> None:
 
 
 async def _fake_upload(data: bytes) -> AsyncIterator[bytes]:
+    """模拟浏览器上传：把字节按 4KB 分块吐出。"""
     for start in range(0, len(data), 4096):
         yield data[start : start + 4096]
 
@@ -40,6 +54,7 @@ async def _fake_upload(data: bytes) -> AsyncIterator[bytes]:
 async def _upload_once(
     text: str, *, file_name: str = TEST_FILE_NAME, category: str = TEST_CATEGORY
 ) -> dict:
+    """跑一次完整的"收文件 → 入库"，打印进度事件，返回最后的 done 事件。"""
     plan = document_service.plan_upload(file_name=file_name, category=category)
     size = await document_service.save_upload(_fake_upload(text.encode("utf-8")), plan)
 
@@ -59,7 +74,7 @@ async def main() -> None:
         level=logging.INFO, format="%(levelname)s:%(name)s:%(lineno)d:%(message)s"
     )
 
-    await document_service.ensure_backend()
+    await document_service.ensure_backend()  # 建库/建集合/建台账表（幂等）
 
     target_dir = Path("assets") / TEST_CATEGORY
     source = (target_dir / TEST_FILE_NAME).as_posix()
@@ -92,6 +107,7 @@ async def main() -> None:
 
     print("\n== 2) save_upload：体积限流与空文件 ==")
     original_limit = document_service.MAX_UPLOAD_BYTES
+    # 临时把上限调到 1KB 验证逻辑，避免真写 50MB
     document_service.MAX_UPLOAD_BYTES = 1024
     try:
         big_plan = document_service.plan_upload(file_name="big.txt", category=TEST_CATEGORY)
@@ -125,6 +141,7 @@ async def main() -> None:
     _check((target_dir / TEST_FILE_NAME).is_file(), "正式文件已落到 assets/docs_check/")
     _check(not list(target_dir.glob(".*")), "目录里没有残留的临时文件")
 
+    # 直连 Milvus 看一眼 chunk 内容（主键前缀、metadata）
     rows = await milvus.get_client().query(
         collection_name=milvus.collection_name,
         filter=f'source == "{source}"',
@@ -162,7 +179,7 @@ async def main() -> None:
     try:
         async for _ in document_service.ingest(fail_plan, file_size=10):
             pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 —— 这里就是要捕获任意异常
         _check(True, f"入库按预期抛错：{type(exc).__name__}")
     else:
         _check(False, "临时文件不存在，入库竟然成功了")
@@ -173,7 +190,7 @@ async def main() -> None:
         "台账已标记为 failed",
     )
     if failed_row:
-        await doc_table.delete_document(failed_row["id"])
+        await doc_table.delete_document(failed_row["id"])  # 清掉这个用例留下的行
 
     print("\n== 6) 删除文档 ==")
     result = await document_service.delete_document(first_doc["id"])
@@ -197,6 +214,7 @@ async def main() -> None:
         shutil.rmtree(target_dir)
     _check(not target_dir.exists(), f"已删除 {target_dir}")
 
+    # 两个连接资源都要显式关闭：不关 Postgres 池的话，退出时后台补连任务会拖住进程
     await milvus.aclose()
     await connection.close()
 
@@ -204,4 +222,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    # Windows 上 psycopg 异步与默认 ProactorEventLoop 不兼容
     asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)

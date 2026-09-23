@@ -13,17 +13,35 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 
-import type { ChatMessage } from '../types'
+import type { ChatMessage, ChatMode } from '../types'
 import MessageItem from './MessageItem'
+
+/** 检索模式选项：value 与后端 ChatRequest.mode 一致，label 是展示给用户的中文 */
+const MODE_OPTIONS: { value: ChatMode; label: string }[] = [
+  { value: 'auto', label: '自动' },
+  { value: 'retrieve', label: '查询数据库' },
+  { value: 'direct', label: '不查询数据库' },
+]
 
 interface ChatViewProps {
   messages: ChatMessage[]
   streaming: boolean
   loadingHistory: boolean
+  /** 检索模式选择器当前值 */
+  mode: ChatMode
+  /** 切换检索模式 */
+  onModeChange: (mode: ChatMode) => void
   onSend: (text: string) => void
 }
 
-export default function ChatView({ messages, streaming, loadingHistory, onSend }: ChatViewProps) {
+export default function ChatView({
+  messages,
+  streaming,
+  loadingHistory,
+  mode,
+  onModeChange,
+  onSend,
+}: ChatViewProps) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -94,6 +112,8 @@ export default function ChatView({ messages, streaming, loadingHistory, onSend }
           rows={1}
           disabled={streaming}
         />
+        {/* 检索模式选择器：发送按钮左侧的胶囊按钮 + 上拉菜单 */}
+        <ModePicker mode={mode} onChange={onModeChange} disabled={streaming} />
         <button
           type="button"
           className="send-btn"
@@ -114,5 +134,68 @@ function SendIcon() {
     <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2">
       <path d="M12 19V5m0 0-6 6m6-6 6 6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+/** 检索模式下拉选择器：胶囊按钮 + 上拉菜单，选中项右侧打勾（流式期间禁用） */
+function ModePicker({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: ChatMode
+  onChange: (mode: ChatMode) => void
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  // 菜单展开时，点击组件外部收起
+  useEffect(() => {
+    if (!open) return
+    const handleDocClick = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleDocClick)
+    return () => document.removeEventListener('mousedown', handleDocClick)
+  }, [open])
+
+  const current = MODE_OPTIONS.find((option) => option.value === mode) ?? MODE_OPTIONS[0]
+
+  return (
+    <div className="mode-picker" ref={rootRef}>
+      <button
+        type="button"
+        className="mode-btn"
+        onClick={() => setOpen((value) => !value)}
+        disabled={disabled}
+        title="选择检索模式"
+      >
+        {current.label}
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4">
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* 上拉菜单：与参考图一致，选中项右侧打勾 */}
+      {open && (
+        <div className="mode-menu">
+          {MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`mode-item${option.value === mode ? ' active' : ''}`}
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === mode && <span className="mode-check">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

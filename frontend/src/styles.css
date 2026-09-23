@@ -1085,3 +1085,82 @@ body,
 .badge {
   transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
+
+/* ---------- 检索模式选择器（发送按钮左侧） ---------- */
+.mode-picker {
+  position: relative; /* 弹出菜单以它为定位锚点 */
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-bottom: 1px; /* 胶囊按钮(32px)与发送按钮(34px)底部对齐的视觉微调 */
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--composer-border);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text-main); /* 与菜单项同亮度（--text-dim 显得暗淡） */
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mode-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 上拉菜单：圆角面板贴着按钮上方弹出 */
+.mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid var(--composer-border);
+  border-radius: 12px;
+  background: var(--composer-bg);
+  box-shadow: var(--composer-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 20;
+}
+
+.mode-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-item:hover {
+  background: var(--item-hover);
+}
+
+/* 选中项文字与其它项同亮度（accent 蓝在深色下显暗），选中态只靠右侧对勾区分 */
+.mode-item.active {
+  color: var(--text-main);
+}
+
+/* 选中项右侧的对勾 */
+.mode-check {
+  color: var(--accent);
+}

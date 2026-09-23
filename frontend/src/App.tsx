@@ -26,7 +26,7 @@ import ChatView from './components/ChatView'
 import DocumentListView from './components/DocumentListView'
 import Sidebar from './components/Sidebar'
 import UploadView from './components/UploadView'
-import type { ChatMessage, SessionInfo, Theme, ViewKey } from './types'
+import type { ChatMessage, ChatMode, SessionInfo, Theme, ViewKey } from './types'
 
 export default function App() {
   /** 当前视图（侧栏导航切换） */
@@ -37,6 +37,8 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  /** 检索模式选择器当前值：auto=自动 / retrieve=强制查库 / direct=强制不查 */
+  const [mode, setMode] = useState<ChatMode>('auto')
   /** 文档列表的刷新信号：上传成功 / 删除文档后 +1 */
   const [docsRefreshKey, setDocsRefreshKey] = useState(0)
 
@@ -141,7 +143,7 @@ export default function App() {
     }
 
     try {
-      await streamChat({ query: text, threadId, onDelta: appendDelta })
+      await streamChat({ query: text, threadId, mode, onDelta: appendDelta })
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       appendDelta(`\n\n[请求出错] ${reason}`)
@@ -176,6 +178,8 @@ export default function App() {
           messages={messages}
           streaming={streaming}
           loadingHistory={loadingHistory}
+          mode={mode}
+          onModeChange={setMode}
           onSend={handleSend}
         />
       )}

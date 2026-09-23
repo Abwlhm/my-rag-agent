@@ -13,4 +13,5 @@ pymilvus
 python-dotenv
 python-multipart
 rich
+typesafe-sdk
 uvicorn

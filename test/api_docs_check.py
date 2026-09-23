@@ -1,3 +1,9 @@
+r"""api_docs_check.py —— 文档接口端到端测试（需要后端已在 127.0.0.1:8000 跑着）。
+
+覆盖 upload（multipart+SSE）/ 列表 / 分类 / 删除；用 txt 走本地 loader，避开 MinerU 在线解析。
+运行：先起后端（python -m backend_api.main），再 python -m test.api_docs_check。
+"""
+
 import asyncio
 import json
 import shutil
@@ -17,6 +23,7 @@ DEMO_TEXT = """这是接口端到端测试用的文本，用来验证上传 → 
 
 
 def _check(condition: bool, message: str) -> None:
+    """迷你断言：成功打印 [OK]，失败直接抛错。"""
     if condition:
         print(f"  [OK] {message}")
     else:
@@ -27,6 +34,7 @@ async def main() -> None:
     target_dir = Path("assets") / TEST_CATEGORY
 
     async with httpx.AsyncClient(timeout=120.0) as client:
+        # 后端连通性检查
         try:
             await client.get(f"{BASE_URL}/api/sessions")
         except httpx.ConnectError as exc:
@@ -68,7 +76,7 @@ async def main() -> None:
                     raise AssertionError(f"入库失败：{event['message']}")
 
         _check(doc is not None, "收到了 done 事件")
-        assert doc is not None
+        assert doc is not None  # 让类型检查也放心
         _check(doc["status"] == "ready", f"台账状态：{doc['status']}")
         _check(doc["chunk_count"] > 0, f"分块数：{doc['chunk_count']}")
 
@@ -96,6 +104,7 @@ async def main() -> None:
         left = [item for item in resp.json()["documents"] if item["id"] == doc["id"]]
         _check(len(left) == 0, "列表里已经没有这篇文档")
 
+        # 重复删除依然 200 且 deleted_chunks = 0（幂等）
         resp = await client.delete(f"{BASE_URL}/api/documents/{doc['id']}")
         _check(resp.status_code == 200 and resp.json()["deleted_chunks"] == 0, "重复删除幂等")
 

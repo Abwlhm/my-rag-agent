@@ -6,6 +6,7 @@
  */
 import type {
   ChatMessage,
+  ChatMode,
   DocumentInfo,
   SessionInfo,
   SseEvent,
@@ -39,6 +40,8 @@ export async function deleteSession(threadId: string): Promise<void> {
 interface StreamChatParams {
   query: string
   threadId: string
+  /** 检索模式（透传给后端 ChatRequest.mode） */
+  mode: ChatMode
   /** 每收到一段增量文本就回调一次（用于实现"打字机"效果） */
   onDelta: (text: string) => void
 }
@@ -91,11 +94,11 @@ export async function* readSse<T>(resp: Response): AsyncGenerator<T> {
  * 流式问答：POST /api/chat/stream，逐段读取后端的 SSE 流。
  * 遇到后端 error 事件时把错误抛给调用方展示（生成器的 finally 会断开连接）。
  */
-export async function streamChat({ query, threadId, onDelta }: StreamChatParams): Promise<void> {
+export async function streamChat({ query, threadId, mode, onDelta }: StreamChatParams): Promise<void> {
   const resp = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, thread_id: threadId }),
+    body: JSON.stringify({ query, thread_id: threadId, mode }),
   })
   if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
 

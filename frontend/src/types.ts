@@ -9,6 +9,9 @@ export interface ChatMessage {
   content: string
 }
 
+/** 检索模式（与后端 ChatRequest.mode 的取值一致） */
+export type ChatMode = 'auto' | 'retrieve' | 'direct'
+
 /** 会话摘要（对应 /api/sessions 返回的 sessions 数组元素） */
 export interface SessionInfo {
   /** 会话编号（当前直接作为标题显示） */
